@@ -24,6 +24,7 @@ def tokenize_conversation(
     overrides: Optional[Dict[str, str]] = None,
     no_system_prompt: bool = False,
     image_generation: bool = False,
+    video_generation: bool = False,
 ) -> torch.Tensor:
     for message in messages:
         message["value"] = message["value"].strip()
@@ -54,6 +55,8 @@ def tokenize_conversation(
     prompt = conv.get_prompt()
     if image_generation:
         prompt += f" {DEFAULT_IM_START_TOKEN}"
+    elif video_generation:
+        prompt += f" {DEFAULT_VI_START_TOKEN}"
     else:
         pass
 

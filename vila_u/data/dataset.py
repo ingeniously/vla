@@ -360,7 +360,7 @@ class OpenVidGeneration(Dataset):
         images = opencv_extract_frames(vid_path, self.num_video_frames)
 
         image_tensor = torch.stack(
-                [process_image_video(image, self.data_args, None, generation_mode=True) for image in images]
+                [process_image(image, self.data_args, None, generation_mode=True) for image in images]
             )
         
         conversation = [

@@ -638,6 +638,37 @@ class VILAUMetaForCausalLM(ABC):
         response = self.vision_tower.vision_tower.rqvaesiglip.decode(image_embeds).to(torch.float32).add_(1).mul_(127.5).clamp_(0, 255)
 
         return response.chunk(2)[0]
+    
+    @torch.inference_mode()
+    def generate_video_content(self, prompt: str, cfg: float = 3.0, generation_nums: int = 1) -> torch.Tensor:
+        GENERATION_VIDEO_FRAMES = 8
+        input_ids_list = []
+
+        conversation = [{"from": "human", "value": prompt}]
+        input_ids = tokenize_conversation(conversation, self.tokenizer, add_generation_prompt=True, video_generation=True).cuda()
+        input_ids_list += [input_ids] * generation_nums
+
+        cfg_conversation = [{"from": "human", "value": " "}]
+        cfg_input_ids = tokenize_conversation(cfg_conversation, self.tokenizer, add_generation_prompt=True, video_generation=True).cuda()
+        input_ids_list += [cfg_input_ids] * generation_nums
+
+        max_length = max([len(input_ids) for input_ids in input_ids_list])
+        input_ids = torch.zeros((len(input_ids_list), max_length), dtype=input_ids_list[0].dtype).cuda()
+        attention_mask = torch.zeros((len(input_ids_list), max_length)).bool().cuda()
+        for i in range(len(input_ids_list)):
+            input_ids[i, -len(input_ids_list[i]):] = input_ids_list[i]
+            attention_mask[i, -len(input_ids_list[i]):] = True
+
+        video_ids = self.generate(input_ids=input_ids, attention_mask=attention_mask, cfg=cfg, max_new_tokens=self.vision_tower.image_tokens * GENERATION_VIDEO_FRAMES, use_cache=True)
+
+        video_embeds = self.vision_tower.vision_tower.rqtransformer.embed_with_model_aux(video_ids, self.vision_tower.vision_tower.rqvaesiglip)
+        video_embeds = torch.cumsum(video_embeds, dim=-2)[:,:,-1,:]
+        video_embeds = video_embeds.reshape(input_ids.shape[0] * GENERATION_VIDEO_FRAMES, int(self.vision_tower.image_tokens**0.5), int(self.vision_tower.image_tokens**0.5), -1)
+        response = self.vision_tower.vision_tower.rqvaesiglip.decode(video_embeds).to(torch.float32).add_(1).mul_(127.5).clamp_(0, 255)
+        _, _, H, W = response.shape
+        response = response.reshape(input_ids.shape[0], GENERATION_VIDEO_FRAMES, 3, H, W)
+
+        return response.chunk(2)[0]
 
     @property
     def default_generation_config(self) -> GenerationConfig:

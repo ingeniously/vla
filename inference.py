@@ -14,6 +14,16 @@ def save_image(response, path):
         cv2.imwrite(os.path.join(path, f"image_{i}.png"), image)
 
 
+def save_video(response, path):
+    os.makedirs(path, exist_ok=True)
+    for i in range(response.shape[0]):
+        video = response[i].permute(0, 2, 3, 1)
+        video = video.cpu().numpy().astype(np.uint8)
+        video = np.concatenate(video, axis=1)
+        video = cv2.cvtColor(video, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(os.path.join(path, f"video_{i}.png"), video)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, required=True)
@@ -23,8 +33,9 @@ if __name__ == "__main__":
     parser.add_argument("--query", type=str, default=None)
     parser.add_argument("--temperature", type=float, default=0.9, help="The value of temperature for text generation.")
     parser.add_argument("--top_p", type=float, default=0.6, help="The value of top-p for text generation.")
-    ### image generation arguments
+    ### image and video generation arguments
     parser.add_argument("--prompt", type=str, default=None)
+    parser.add_argument("--video_generation", type=bool, default=False)
     parser.add_argument("--cfg", type=float, default=3.0, help="The value of the classifier free guidance for image generation.")
     parser.add_argument("--save_path", type=str, default="generated_images/")
     parser.add_argument("--generation_nums", type=int, default=1)
@@ -52,8 +63,13 @@ if __name__ == "__main__":
         else:
             raise ValueError("No visual content input!")
     elif args.prompt is not None:
-        response = model.generate_image_content(args.prompt, args.cfg, args.generation_nums)
-        save_image(response, args.save_path)
-        exit()
+        if args.video_generation:
+            response = model.generate_video_content(args.prompt, args.cfg, args.generation_nums)
+            save_video(response, args.save_path)
+            exit()
+        else:
+            response = model.generate_image_content(args.prompt, args.cfg, args.generation_nums)
+            save_image(response, args.save_path)
+            exit()
     else:
         raise ValueError("No query or prompt provided!")
