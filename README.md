@@ -74,6 +74,11 @@ CUDA_VISIBLE_DEVICES=0 python inference.py --model_path path/to/your_downloaded_
 CUDA_VISIBLE_DEVICES=0 python inference.py --model_path path/to/your_downloaded_model --prompt "A snowy mountain." --save_path path/to/save_images --generation_nums 8
 ```
 
+```bash
+# Video Generation
+CUDA_VISIBLE_DEVICES=0 python inference.py --model_path path/to/your_downloaded_model --prompt "Fireworks in the air." --video_generation True --save_path path/to/save_videos
+```
+
 ### Evaluation
 
 Evaluate VILA-U on visual language benchmarks with the following command:
