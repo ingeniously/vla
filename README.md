@@ -22,8 +22,9 @@
 
 ## News
 
-- \[2024/10\] 🔥 Online demo of VILA-U is available: [https://vila-u.mit.edu](https://vila-u.mit.edu). Have a try!
-- \[2024/10\] 🔥 We release the code and [models](https://huggingface.co/collections/mit-han-lab/vila-u-7b-6716f7dd5331e4bdf944ffa6) for VILA-U!
+- \[2025/01\] 🎉 VILA-U has been accepted to ICLR2025!
+- \[2024/10\] Online demo of VILA-U is available: [https://vila-u.mit.edu](https://vila-u.mit.edu). Have a try!
+- \[2024/10\] We release the code and [models](https://huggingface.co/collections/mit-han-lab/vila-u-7b-6716f7dd5331e4bdf944ffa6) for VILA-U!
 
 ## Abstract
 
