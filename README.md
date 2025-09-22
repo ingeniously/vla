@@ -49,14 +49,6 @@ CUDA_VISIBLE_DEVICES=0 python inference.py --model_path path/to/your_downloaded_
 CUDA_VISIBLE_DEVICES=0 python inference.py --model_path path/to/your_downloaded_model --prompt "Fireworks in the air." --video_generation True --save_path path/to/save_videos
 ```
 
-### Evaluation
-
-Evaluate VILA-U on visual language benchmarks with the following command:
-```bash
-vila_u-eval -m path/to/model -c vicuna_v1 -ti local
-```
-Please refer to `vila_u/cli/eval.py` for more argument details.
-
 ### Training
 
 Note: Please prepare data before training. Data preparation details are in the file `vila_u/data/datasets_mixture.py`.
