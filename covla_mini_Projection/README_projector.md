@@ -1,4 +1,4 @@
-# CoVLA Trajectory Projection Toolkit
+# CoVLA_MINI Trajectory Projection 
 
 Complete pipeline to extract, flatten, and project CoVLA 3D trajectories onto images and videos.
 
