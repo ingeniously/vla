@@ -100,7 +100,7 @@ class VILAUMetaModel(ABC):
         ), "At least one of the components must be instantiated."
         return vlm
 
-    def save_pretrained(self, output_dir, state_dict=None):
+    def save_pretrained(self, output_dir, state_dict=None,safe_serialization: Optional[bool] = None, **kwargs):
         if state_dict is None:
             state_dict = self.state_dict()
         
