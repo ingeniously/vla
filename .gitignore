@@ -1,0 +1,28 @@
+# models/checkpoints/outputs
+vila-u-7b-256/
+checkpoints/
+out/
+wandb/
+
+# datasets and media (adjust if these are INSIDE this repo)
+*.bag
+*.mp4
+*.avi
+*.tar
+*.zip
+
+# large model weights
+*.pt
+*.bin
+*.safetensors
+*.ckpt
+
+# caches and misc
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+
+# local dataset (leading space folder)
+ CoVLA-Dataset-Mini/
+vila_u.egg-info/

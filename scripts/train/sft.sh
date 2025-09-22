@@ -25,9 +25,9 @@ torchrun --nnodes=$n_node --nproc_per_node=8 --master_port=25001 \
     --master_addr $MASTER_ADDR --node_rank=$SLURM_PROCID \
     vila_u/train/train_mem.py \
     --deepspeed ./scripts/zero2.json \
-    --model_name_or_path path/to/vila-u-pretrain \
+    --model_name_or_path /home/choi/ToT_vla/vila-u/vila-u-7b-256 \
     --version v1 \
-    --data_mixture sharegpt4v_sft+vflan+shot2story_shotonly+video_chatgpt+youcook2+vatex+sharegpt_video+scienceqa+wit_subset+sherlock+internal_generation+openvid_generation \
+    --data_mixture covla_dataset_mini \
     --chunk_sampler True \
     --mm_projector mlp2x_gelu \
     --tune_mm_projector True \

@@ -49,6 +49,16 @@ def register_datasets_mixtures():
     )
     add_dataset(openvid_generation)
 
+    # Register CoVLA dataset (Mini). Point data_path to the dataset root containing
+    # captions/, images/, video_samples/, states/.
+    covla_dataset_mini = Dataset(
+        dataset_name="covla_dataset_mini",
+        dataset_type="covla-generation",
+        data_path="/home/choi/ToT_vla/covla-mini",
+        description="CoVLA-Dataset-Mini: video + images + captions + states for autonomous driving."
+    )
+    add_dataset(covla_dataset_mini)
+
 
     # Please download data from https://sharegpt4v.github.io/ to prepare sharegpt4v.
     sharegpt4v_pretrain = Dataset(

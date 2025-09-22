@@ -383,6 +383,156 @@ class OpenVidGeneration(Dataset):
         return data_dict
 
 
+class CoVLAGeneration(Dataset):
+    """
+    Dataset for CoVLA-Dataset-Mini structure:
+    - captions/<scene>.jsonl  (can be JSONL, concatenated JSON objects, or a single JSON array)
+    - video_samples/<scene>.mp4
+    - images/<scene>/*.png
+    - states/<scene>.jsonl (optional)
+    """
+
+    def __init__(self, data_path: str, image_folder: str, tokenizer, data_args: DataArguments, training_args: TrainingArguments) -> None:
+        super().__init__()
+        self.data_path = data_path
+        self.tokenizer = tokenizer
+        self.data_args = data_args
+        self.training_args = training_args
+        self.num_video_frames = getattr(data_args, "num_video_frames", 8)
+
+        captions_dir = os.path.join(data_path, "captions")
+        assert os.path.isdir(captions_dir), f"captions folder not found: {captions_dir}"
+
+        def read_json_records(fpath: str):
+            # Robust parser: JSONL -> concatenated JSON -> array/dict
+            with open(fpath, "r", encoding="utf-8") as f:
+                text = f.read().strip()
+            recs = []
+
+            # Pass 1: JSONL quick pass
+            for line in text.splitlines():
+                s = line.strip()
+                if not s:
+                    continue
+                try:
+                    recs.append(json.loads(s))
+                except json.JSONDecodeError:
+                    recs = []
+                    break
+            if recs:
+                return recs
+
+            # Pass 2: stream decode concatenated JSON objects
+            try:
+                decoder = json.JSONDecoder()
+                i, n = 0, len(text)
+                while i < n:
+                    while i < n and text[i].isspace():
+                        i += 1
+                    if i >= n:
+                        break
+                    obj, j = decoder.raw_decode(text, idx=i)
+                    recs.append(obj)
+                    i = j
+                if recs:
+                    return recs
+            except json.JSONDecodeError:
+                pass
+
+            # Pass 3: single JSON value (array or dict)
+            try:
+                obj = json.loads(text) if text else None
+                if obj is None:
+                    return []
+                return obj if isinstance(obj, list) else [obj]
+            except Exception as e:
+                logging.warning(f"Failed reading {fpath}: {e}")
+                return []
+
+        def pick_caption(rec: dict):
+            return (
+                rec.get("plain_caption")
+                or rec.get("rich_caption")
+                or rec.get("caption")
+                or rec.get("text")
+                or rec.get("message")
+                or rec.get("utterance")
+            )
+
+        self.samples = []
+        for fname in sorted(os.listdir(captions_dir)):
+            if not fname.endswith(".jsonl"):
+                continue
+            scene = os.path.splitext(fname)[0]
+            fpath = os.path.join(captions_dir, fname)
+
+            records = read_json_records(fpath)
+            if not records:
+                logging.warning(f"No parsable records in {fpath}")
+                continue
+
+            added = 0
+            for rec in records:
+                if not isinstance(rec, dict):
+                    continue
+                caption = pick_caption(rec) or "A driving scene."
+                self.samples.append({"scene": scene, "caption": caption})
+                added += 1
+
+            if added == 0:
+                logging.warning(f"No captions extracted from {fpath}")
+
+        if len(self.samples) == 0:
+            raise RuntimeError(f"No samples found under {captions_dir}")
+
+    def __len__(self):
+        return len(self.samples)
+
+    def _load_frames_for_scene(self, scene: str):
+        # Prefer video if available
+        video_path = os.path.join(self.data_path, "video_samples", f"{scene}.mp4")
+        if os.path.exists(video_path):
+            images = opencv_extract_frames(video_path, self.num_video_frames)
+            return images
+        # Fallback to images folder
+        img_dir = os.path.join(self.data_path, "images", scene)
+        if os.path.isdir(img_dir):
+            img_files = sorted([os.path.join(img_dir, f) for f in os.listdir(img_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))])
+            if len(img_files) == 0:
+                raise FileNotFoundError(f"No images in {img_dir}")
+            # Take evenly spaced frames up to num_video_frames
+            step = max(1, len(img_files) // self.num_video_frames)
+            chosen = img_files[::step][: self.num_video_frames]
+            images = [Image.open(p).convert("RGB") for p in chosen]
+            return images
+        raise FileNotFoundError(f"Neither video nor images found for scene {scene}")
+
+    def __getitem__(self, i):
+        sample = self.samples[i]
+        scene, caption = sample["scene"], sample["caption"]
+
+        images = self._load_frames_for_scene(scene)
+        image_tensor = torch.stack([process_image(im, self.data_args, None, generation_mode=True) for im in images])
+
+        # Build conversation: user provides caption prompt, model outputs visual tokens placeholder
+        conversation = [
+            {"from": "human", "value": caption},
+            {"from": "gpt", "value": f"{DEFAULT_VI_START_TOKEN}" + f"{DEFAULT_IMAGE_TOKEN}" * len(images) + f"{DEFAULT_VI_END_TOKEN}"},
+        ]
+        sources = [conversation]
+
+        data_dict = preprocess(
+            sources,
+            self.tokenizer,
+            has_image=True,
+        )
+        if isinstance(i, int):
+            data_dict = dict(input_ids=data_dict["input_ids"][0], labels=data_dict["labels"][0])
+
+        data_dict["image"] = image_tensor
+        return data_dict
+
+
 class LazyMMC4Dataset(Dataset):
 
     num_image_tokens = 576
@@ -896,6 +1046,8 @@ def build_datasets(
             dataset_cls = LazyGenerationDataset
         elif dataset_type == "openvid-generation":
             dataset_cls = OpenVidGeneration
+        elif dataset_type == "covla-generation":
+            dataset_cls = CoVLAGeneration
         elif dataset_type == "vflan":
             dataset_cls = LazyVFlanDataset
         else:

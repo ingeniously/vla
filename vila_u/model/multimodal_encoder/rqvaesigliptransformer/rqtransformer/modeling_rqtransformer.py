@@ -124,55 +124,87 @@ class RQTransformer(PreTrainedModel):
         return head_outputs
     
     def generate(self, embed_from_body, model_aux=None, cfg=3.0):
-        generate_idx = 1
+        """
+        Args:
+            embed_from_body: [B, seq_len, D_in2] conditioning from LLM (hidden states at placeholder span).
+                             Expect B = 2*N when using CFG (cond + uncond concatenated).
+            model_aux: rqvae providing get_code_emb_with_depth() and decode().
+            cfg: classifier-free guidance weight.
+
+        Returns:
+            out_features: [B//2, seq_len, embed_dim] features for the conditional half (post cumsum depth aggregation).
+            code:        [B//2, seq_len, depth] sampled codebook indices for the conditional half.
+        """
+        assert model_aux is not None, "model_aux (RQ-VAE) is required."
         B, seq_len, _ = embed_from_body.shape
+        assert B % 2 == 0, "Batch must be concatenated as [uncond; cond] for CFG."
 
-        embed_from_body = self.in_mlp_2(embed_from_body)
+        # Project LLM hidden to transformer embed dim
+        embed_from_body = self.in_mlp_2(embed_from_body)  # [B, seq_len, E]
+        device = embed_from_body.device
+        depth = self.pos_emb_d.shape[1]  # generation steps along depth dimension
 
-        depth_ctx_full = embed_from_body.view(B, seq_len, 1, -1)
-        depth_ctx_full = depth_ctx_full.reshape(B * seq_len, generate_idx, -1)
-        depth_ctx_full = depth_ctx_full + self.pos_emb_d[:, :generate_idx, :]
+        # Start with only the LLM token per (seq position, depth=0)
+        generate_idx = 1
+        depth_ctx_full = embed_from_body.view(B, seq_len, 1, -1)               # [B, S, 1, E]
+        depth_ctx_full = depth_ctx_full.reshape(B * seq_len, generate_idx, -1) # [B*S, 1, E]
+        depth_ctx_full = depth_ctx_full + self.pos_emb_d[:, :generate_idx, :]  # add depth pos emb
 
-        head_outputs = self.head_transformer(depth_ctx_full)
-        head_outputs = head_outputs.reshape(B, -1)
+        # Run head transformer; use last-step feature per (seq position)
+        head_outputs = self.head_transformer(depth_ctx_full)                   # [B*S, 1, E]
+        last_features = head_outputs[:, -1, :]                                 # [B*S, E]
+        logits = self.classifier_mlp(last_features)                            # [B*S, V]
 
-        logits = self.classifier_mlp(head_outputs)
+        # CFG: assume first half uncond, second half cond (batch concatenation)
+        half = (B * seq_len) // 2
+        logits_uncond = logits[:half, :]
+        logits_cond = logits[half:, :]
+        guided = logits_cond + cfg * (logits_cond - logits_uncond)
 
-        logits = logits[B//2:, :] + cfg * (logits[:B//2, :] - logits[B//2:, :])
-        code = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
-        code = code.reshape(B//2, seq_len, 1).repeat(2, 1, self.pos_emb_d.shape[1])
+        # Sample first depth code for each (batch,pos)
+        code = sample_from_logits(guided, temperature=1.0, top_p=0.96, top_k=900)  # [half]
+        code = code.view(B // 2, seq_len, 1)                                       # [N, S, 1]
+        # Duplicate to full depth timeline so embed_with_model_aux can build context
+        code = code.repeat(2, 1, self.pos_emb_d.shape[1])                          # [B, S, D]
 
-        for i in range(self.pos_emb_d.shape[1]-1):
+        # Iteratively sample remaining depth positions
+        for i in range(depth - 1):
             generate_idx += 1
-            depth_ctx = self.embed_with_model_aux(code, model_aux)
-            depth_ctx = torch.cumsum(depth_ctx, dim=-2)[:, :, :i+1, :]
-            if len(depth_ctx.shape) == 3:
-                depth_ctx = depth_ctx.unsqueeze(2)
-            depth_ctx = self.in_mlp_1(depth_ctx)
+            depth_ctx = self.embed_with_model_aux(code, model_aux)                 # [B, S, D, E']
+            depth_ctx = torch.cumsum(depth_ctx, dim=-2)                            # cum along depth
+            depth_ctx = self.in_mlp_1(depth_ctx)                                   # [B, S, D, E]
 
-            depth_ctx_full = torch.cat(
-                [
-                    embed_from_body.view(B, seq_len, 1, -1),
-                    depth_ctx,
-                ],
+            # Compose full context: current LLM feature + previous depth states
+            full_ctx = torch.cat(
+                [embed_from_body.view(B, seq_len, 1, -1), depth_ctx[:, :, :-1, :]],
                 dim=-2,
-            )
+            )                                                                      # [B, S, D, E]
+            full_ctx = full_ctx.reshape(B * seq_len, generate_idx, -1)
+            full_ctx = full_ctx + self.pos_emb_d[:, :generate_idx, :]
 
-            depth_ctx_full = depth_ctx_full.reshape(B * seq_len, generate_idx, -1)
-            depth_ctx_full = depth_ctx_full + self.pos_emb_d[:, :generate_idx, :]
+            head_outputs = self.head_transformer(full_ctx)                          # [B*S, gen_idx, E]
+            last_features = head_outputs[:, -1, :]                                  # [B*S, E]
+            logits = self.classifier_mlp(last_features)                             # [B*S, V]
 
-            head_outputs = self.head_transformer(depth_ctx_full)
-            head_outputs = head_outputs[:, -1, :]
+            # CFG mix on the last token of this step
+            half = (B * seq_len) // 2
+            logits_uncond = logits[:half, :]
+            logits_cond = logits[half:, :]
+            guided = logits_cond + cfg * (logits_cond - logits_uncond)
 
-            logits = self.classifier_mlp(head_outputs)
+            new_code = sample_from_logits(guided, temperature=1.0, top_p=0.96, top_k=900)  # [half]
+            new_code = new_code.view(B // 2, seq_len, 1)                                    # [N, S, 1]
+            # Place into the (i+1)-th depth position for both uncond/cond halves
+            code[:, :, i + 1] = new_code
+            code[B // 2 :, :, i + 1] = new_code
 
-            logits = logits[B//2:, :] + cfg * (logits[:B//2, :] - logits[B//2:, :])
-            code_generate = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
-            code_generate = code_generate.reshape(B//2, seq_len).repeat(2, 1)
-            code[:, :, i+1] = code_generate
+        # Return features for decoding; aggregate depth and take the last accumulated feature
+        out_features = self.embed_with_model_aux(code, model_aux)                 # [B, S, D, E']
+        out_features = torch.cumsum(out_features, dim=-2)[:, :, -1, :]           # [B, S, E']
 
-        out_features = self.embed_with_model_aux(code, model_aux)
-        out_features = torch.cumsum(out_features, dim=-2)[:, :, -1, :]
+        # Keep only the conditional half for downstream decoding
+        out_features = out_features[B // 2 :, :, :]                               # [N, S, E']
+        code = code[B // 2 :, :, :]                                               # [N, S, D]
 
         return out_features, code
 
