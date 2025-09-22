@@ -8,6 +8,7 @@ Assumptions
 - Each JSONL line has keys: intrinsic_matrix (3x3), extrinsic_matrix (4x4), image_path (relative to dataset root), trajectory (Nx3), frame_id
 - image_size and frequency are supplied via CLI or a small JSON (default: width=1928, height=1208, fps=20)
 
+
 Usage (example)
   python project_trajectories.py --dataset-root "c:/Users/USER/Pictures/BASEPIC/CoVLA-Dataset-Mini" --fps 20 --width 1928 --height 1208 --num-future-trajectories 20
 

@@ -3,6 +3,7 @@
 Complete pipeline to extract, flatten, and project CoVLA 3D trajectories onto images and videos.
 
 
+
 ## Features
 - Extract .tar.gz archives with nested directory structures
 - Flatten complex nested folders automatically

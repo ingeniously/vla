@@ -5,6 +5,7 @@ Extract all .tar.gz/.tgz/.tar archives in a folder into subfolders with the same
 Example
   python extract_archives.py --src "C:/Users/USER/Pictures/BASEPIC/covla-mini/images"
 
+
 Behavior
 - For 2022-07-14--14-32-55--10_first.tar.gz → extracts into
   C:/.../images/2022-07-14--14-32-55--10_first/

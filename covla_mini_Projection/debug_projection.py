@@ -6,6 +6,7 @@ with open('C:/Users/USER/Pictures/BASEPIC/covla-mini/states/2022-07-14--14-32-55
     line = f.readline()
     data = json.loads(line)
 
+
 K = np.array(data['intrinsic_matrix'], dtype=np.float64)
 T = np.array(data['extrinsic_matrix'], dtype=np.float64)
 traj = np.array(data['trajectory'], dtype=np.float64)
